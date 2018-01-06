@@ -66,7 +66,7 @@ object Main {
         .distinct
         .count > 1)
       .sequential() // necessary - Variant/Genotype classes are not thread-safe
-      .forEach(variant => variant.getGenotypesOrderedByName.forEach(g => syncPut(variant.getID, g.getSampleName, g.getGenotypeString)))
+      .forEach(variant => variant.getGenotypesOrderedByName.forEach(g => syncPut(s"${variant.getContig}:${variant.getID}", g.getSampleName, g.getGenotypeString)))
 
     table
   }
