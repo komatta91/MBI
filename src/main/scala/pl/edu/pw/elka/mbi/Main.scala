@@ -1,41 +1,43 @@
 package pl.edu.pw.elka.mbi
 
 import java.io.File
-import java.util
-import java.util.stream.StreamSupport
 
-import com.google.common.collect.{HashBasedTable, Table}
 import htsjdk.samtools.util.CloseableIterator
-import htsjdk.variant.variantcontext.VariantContext
+import htsjdk.variant.variantcontext.{GenotypesContext, VariantContext}
 import htsjdk.variant.vcf.VCFFileReader
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+
+import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
+
 
 object Main {
 
-  private def openMultipleFiles(vcfs: List[String]): CloseableIterator[VariantContext] = {
-    val iteratorList = new util.ArrayList[CloseableIterator[VariantContext]]()
-    //val headerList = new util.ArrayList[VCFHeader]()
+  private def openMultipleFiles(vcfs: List[String]): (List[String], CloseableIterator[VariantContext]) = {
+    val iteratorList = ListBuffer[CloseableIterator[VariantContext]]()
+    var columnSet = Set[String]()
     for(vcf <- vcfs){
       val data = new File(vcf)
       val tabix = new File(vcf + ".tbi")
       val fileReader = new VCFFileReader(data, tabix, true)
-      iteratorList.add(fileReader.iterator)
-      //headerList.add(fileReader.getFileHeader)
+      iteratorList += fileReader.iterator
+      columnSet ++= fileReader.getFileHeader.getGenotypeSamples.asScala
     }
-    new CloseableIterator[VariantContext]{
+    (columnSet.toList.sorted, new CloseableIterator[VariantContext]{
       private val iteratorQueue = iteratorList
-      //private val headerQueue = headerList
-      private var currentIterator: CloseableIterator[VariantContext] = iteratorList.get(0)
+      private var currentIterator: CloseableIterator[VariantContext] = iteratorList.head
       private var currentIteratorIdx = 0
 
       private def rollIterators(): Unit ={
-        while(!currentIterator.hasNext && currentIteratorIdx+1 < iteratorQueue.size()){
+        while(!currentIterator.hasNext && currentIteratorIdx+1 < iteratorQueue.size){
           currentIteratorIdx += 1
-          currentIterator = iteratorList.get(currentIteratorIdx)
+          currentIterator = iteratorList(currentIteratorIdx)
         }
       }
 
       override def close(): Unit = {
-        iteratorQueue.forEach(x => x.close())
+        iteratorQueue.foreach(x => x.close())
       }
 
       override def next(): VariantContext = {
@@ -47,40 +49,38 @@ object Main {
         rollIterators()
         currentIterator.hasNext
       }
-    }
+    })
   }
 
-  private def transformToTable(iter: CloseableIterator[VariantContext], snpLimit: Int): Table[String, String, String] = {
-    val table: Table[String, String, String] = HashBasedTable.create()
-    val syncPut = (r: String, c: String, v: String) => {
-      table.synchronized{
-        table.put(r, c, v)
-      }
+  private def adaptToSpark(spark: SparkSession, schema: StructType, iter: CloseableIterator[VariantContext], snpLimit: Int): DataFrame = {
+    val makeRow = (variantName: String, genotypes: GenotypesContext) => {
+      Row.fromSeq(schema.map(x => x.name).map {
+        case "ID" => variantName
+        case c => Option(genotypes.get(c).getGenotypeString).getOrElse("")
+      })
     }
-    iter.stream()
-      .parallel()
+    val rowList: java.util.List[Row] = iter.asScala.toStream
       .filter(variant => variant.isSNP)
-      .limit(snpLimit)
-      .filter(variant => StreamSupport.stream(variant.getGenotypesOrderedByName.spliterator, true)
-        .map[String](genotype => genotype.getGenotypeString)
-        .distinct
-        .count > 1)
-      .sequential() // necessary - Variant/Genotype classes are not thread-safe
-      .forEach(variant => variant.getGenotypesOrderedByName.forEach(g => syncPut(s"${variant.getContig}:${variant.getID}", g.getSampleName, g.getGenotypeString)))
-
-    table
+      .take(snpLimit)
+      .filter(variant => variant.getGenotypes.asScala.map(genotype => genotype.getGenotypeString).toStream.distinct.size > 1)
+      .map(variant => makeRow(s"${variant.getContig}:${variant.getID}", variant.getGenotypes))
+      .asJava
+    spark.createDataFrame(rowList, schema)
   }
 
 
   // https://github.com/samtools/htsjdk/blob/master/src/test/java/htsjdk/tribble/index/tabix/TabixIndexTest.java
   // testQueryProvidedItemsAmount
   def main(args: Array[String]): Unit = {
-    val iter = openMultipleFiles(args.toList)
+    val (columns, iter) = openMultipleFiles(args.toList)
+
+    val spark = SparkSession.builder().appName("MBI").master("local[4]").getOrCreate()
+    val schema = StructType((List("ID") ++ columns).map(cn => StructField(cn, StringType, nullable = true)))
+//    var data = spark.createDataFrame(spark.emptyDataFrame.rdd, schema)
+
     val startMillis = System.currentTimeMillis
-    val table1 = transformToTable(iter, 1000)
-    val table2 = transformToTable(iter, 1000)
+    val data = adaptToSpark(spark, schema, iter, 100)
     println((System.currentTimeMillis - startMillis)+"ms")
-    println(table1.size())
-    println(table2.size())
+    println(data.count())
   }
 }
