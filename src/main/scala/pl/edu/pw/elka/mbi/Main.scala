@@ -2,7 +2,6 @@ package pl.edu.pw.elka.mbi
 
 import org.apache.spark.sql.SparkSession
 
-
 object Main {
 
   // https://github.com/samtools/htsjdk/blob/master/src/test/java/htsjdk/tribble/index/tabix/TabixIndexTest.java
@@ -16,6 +15,8 @@ object Main {
     val startMillis = System.currentTimeMillis
     val data = VcfSparkAdapter.createDataFrame(spark, columns, iter, 100)
     println((System.currentTimeMillis - startMillis)+"ms")
-    println(data.count())
+
+    val rhmi = new RHMIteration(1, data)
+    println(rhmi.meanVector)
   }
 }
