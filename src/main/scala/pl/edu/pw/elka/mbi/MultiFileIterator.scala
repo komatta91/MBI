@@ -13,24 +13,22 @@ import scala.collection.JavaConverters._
   * Extension of the VCFFileReader utility from htsjdk library.
   * Provides transparent, sequential reading of multiple VCF files with their tabbix'es as a single CloseableIterator[VariantContext].
   * @param iteratorList - list of CloseableIterator[VariantContext] objects from VCFFileReaders
-  * @param columnSet - sorted list of columns available in VCFFileReaders
+  * @param sortedColumnSet - sorted list of columns available in VCFFileReaders
   */
-class MultiFileIterator private(iteratorList: ListBuffer[CloseableIterator[VariantContext]], columnSet: List[String])
+class MultiFileIterator private(val iteratorList: ListBuffer[CloseableIterator[VariantContext]], val sortedColumnSet: List[String])
   extends CloseableIterator[VariantContext] {
-  val sortedColumnSet: List[String] = columnSet
-  private val iteratorQueue = iteratorList
   private var currentIterator: CloseableIterator[VariantContext] = iteratorList.head
   private var currentIteratorIdx = 0
 
   private def rollIterators(): Unit ={
-    while(!currentIterator.hasNext && currentIteratorIdx+1 < iteratorQueue.size){
+    while(!currentIterator.hasNext && currentIteratorIdx+1 < iteratorList.size){
       currentIteratorIdx += 1
-      currentIterator = iteratorQueue(currentIteratorIdx)
+      currentIterator = iteratorList(currentIteratorIdx)
     }
   }
 
   override def close(): Unit = {
-    iteratorQueue.foreach(x => x.close())
+    iteratorList.foreach(x => x.close())
   }
 
   override def next(): VariantContext = {
