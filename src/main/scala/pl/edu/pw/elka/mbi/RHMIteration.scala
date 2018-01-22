@@ -1,10 +1,9 @@
 package pl.edu.pw.elka.mbi
 
-import org.apache.spark.sql.types.{StringType, IntegerType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 
 import scala.util.Random
-
 import scala.collection.JavaConverters._
 
 /**
@@ -16,9 +15,9 @@ import scala.collection.JavaConverters._
 class RHMIteration (val iteration: Int, data: DataFrame) {
   val randomSubjects: List[String] = Random.shuffle(data.columns.drop(1).toList).take((data.columns.length-1)/2)
   val sampleData: DataFrame = data.select("ID", randomSubjects:_*)
-  val meanVector: DataFrame = calculateMeanVector()
-  val standardDeviationVector: DataFrame = calculateStandardDeviationVector()
   private var alleleOccurrences: DataFrame = null
+  private var alleleMeans: DataFrame = null
+  private var alleleStandardDeviations: DataFrame = null
 
   /**
     * Counts allele occurrences on a given position represented by the row
@@ -67,17 +66,60 @@ class RHMIteration (val iteration: Int, data: DataFrame) {
     alleleOccurrences = sampleData.sparkSession.createDataFrame(rows, schema)
   }
 
-  private def calculateMeanVector(): DataFrame = {
-    if(alleleOccurrences == null){
-        aggregateOccurrences()
+  /**
+    * Means calculation.
+    * Because on each position every subject binarily may have or may not have a given allele,
+    * the average is equal to the percentage of subjects having given allele on a given position.
+    * @return calculated means DataFrame
+    */
+  def calculateMeans(): DataFrame = {
+    if (alleleOccurrences == null) {
+      aggregateOccurrences()
     }
-    null
+    if (alleleMeans == null) {
+      val schema = StructType(Seq(StructField("ID", StringType, nullable = false)) ++
+        alleleOccurrences.schema.toStream.drop(1).map(sf => StructField(sf.name, DoubleType, nullable = false)))
+      val rows = alleleOccurrences.collect.toStream
+        .map(row => Row.fromSeq(Seq(row.get(0)) ++ row.toSeq.drop(1).map(value => value.toString.toDouble / sampleData.columns.length))).toList.asJava
+      alleleMeans = sampleData.sparkSession.createDataFrame(rows, schema)
+    }
+    alleleMeans
   }
 
-  private def calculateStandardDeviationVector(): DataFrame = {
+  /**
+    * Standard deviation calculation.
+    * Because on each position every subject binarily may have or may not have a given allele,
+    * the standard deviation for a given combination is determined with the following formula:
+    * S - subjects in sample
+    * A - subjects having allele on a given position
+    * sqrt(
+    *   (A / S)^2 * A
+    *   +
+    *   (1 - A / S)^2 * (S - A)
+    * )
+    * /
+    * S - 1
+    *
+    * @return calculated standard deviations DataFrame
+    */
+  def calculateStandardDeviations(): DataFrame = {
     if(alleleOccurrences == null){
       aggregateOccurrences()
     }
-    null
+    if (alleleMeans == null) {
+      val schema = StructType(Seq(StructField("ID", StringType, nullable = false)) ++
+        alleleOccurrences.schema.toStream.drop(1).map(sf => StructField(sf.name, DoubleType, nullable = false)))
+      val rows = alleleOccurrences.collect.toStream
+        .map(row => Row.fromSeq(Seq(row.get(0)) ++ row.toSeq.drop(1)
+          .map(value => value.toString.toDouble)
+          .map(value =>
+            Math.sqrt(
+                (Math.pow(value / sampleData.columns.length, 2) * value) + (Math.pow(1 - (value / sampleData.columns.length), 2) * (sampleData.columns.length - value))
+              )/(sampleData.columns.length - 1)
+            )
+        )).toList.asJava
+      alleleStandardDeviations = sampleData.sparkSession.createDataFrame(rows, schema)
+    }
+    alleleStandardDeviations
   }
 }
