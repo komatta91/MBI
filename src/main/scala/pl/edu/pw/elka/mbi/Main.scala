@@ -1,6 +1,7 @@
 package pl.edu.pw.elka.mbi
 
 import org.apache.spark.sql.SparkSession
+import pl.edu.pw.elka.mbi.rhm.RHM
 
 object Main {
 
