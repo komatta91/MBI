@@ -17,7 +17,6 @@ object Main {
     println((System.currentTimeMillis - startMillis)+"ms")
 
     val rhmi = new RHMIteration(1, data)
-    println(rhmi.calculateMeans())
-    println(rhmi.calculateStandardDeviations())
+    println(rhmi.calculateDistances)
   }
 }
