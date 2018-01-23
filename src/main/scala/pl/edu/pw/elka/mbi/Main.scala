@@ -17,18 +17,14 @@ object Main {
     println((System.currentTimeMillis - startMillis)+"ms")
 
     //RHM
-    val iterations = 10
-    val distances = 0.until(iterations).map(i => new RHMIteration(i, data).distances)
-    val averageDistances = distances
-      .reduce((acc, m) => acc ++ m.map { case (k,v) => k -> (v + acc.getOrElse(k,0.0)) })
-    val averageDistance = averageDistances.values.sum / averageDistances.size
+    val rhm = new RHM(data, 10)
+    val outliers = rhm.outliers
+    val outliers2 = rhm.outliersAlt
 
-    val median = 1.4286 * averageDistances.toStream.sortWith((a, b) => a._2.compareTo(b._2) < 0).drop(averageDistances.size / 2).head._2
-    val outliers = averageDistances.filter((entry: (String, Double)) => entry._2 > median).keySet
-
-    println(outliers)
-    println(outliers.size)
-    println(averageDistances.size)
+    println(s"Outliers:    ${outliers.size}")
+    println(s"Outliers2:   ${outliers2.size}")
+    println(s"AllSubjects: ${data.columns.length-1}")
+//    println(outliers.map(n => s"$n\n"))
 
   }
 }
