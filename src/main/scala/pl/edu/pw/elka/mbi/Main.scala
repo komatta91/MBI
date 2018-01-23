@@ -1,7 +1,7 @@
 package pl.edu.pw.elka.mbi
 
 import org.apache.spark.sql.SparkSession
-import pl.edu.pw.elka.mbi.rhm.RHM
+import pl.edu.pw.elka.mbi.rhm.RHMClassifier
 
 object Main {
 
@@ -18,7 +18,7 @@ object Main {
     println((System.currentTimeMillis - startMillis)+"ms")
 
     //RHM
-    val rhm = new RHM(data, 10)
+    val rhm = new RHMClassifier(data, 10)
     val outliers = rhm.outliers
     val outliers2 = rhm.outliersAlt
 

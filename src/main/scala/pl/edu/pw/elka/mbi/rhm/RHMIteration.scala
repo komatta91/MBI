@@ -1,5 +1,6 @@
 package pl.edu.pw.elka.mbi.rhm
 
+import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 
@@ -10,21 +11,21 @@ import scala.util.Random
   * Class representing single iteration of the Resampling by half means algorithm.
   * Half of the provided data is selected as the sampleData
   * @param iteration - iteration number
-  * @param data - available data
+  * @param trainData - train data
   */
-class RHMIteration (val iteration: Int, val data: DataFrame) {
-  lazy val sampleData: DataFrame = sampleData(data)
-  lazy val distances: Map[String, Double] = calculateDistances()
+class RHMIteration (val iteration: Int, val trainData: DataFrame) {
+  lazy val sampleData: DataFrame = sampleData(trainData)
+  lazy val trainDistances: Map[String, Double] = calculateDistances()
+  lazy val distancesOnPositions: DataFrame = calculateDistancesOnPositions()
   private lazy val sampleSize: Int = sampleData.columns.length - 1
   private lazy val scaledDataAlleleOccurrences: DataFrame = calculateScaledOccurrences()
   private lazy val sampleAlleleOccurrences: DataFrame = aggregateOccurrences(sampleData)
   private lazy val alleleMeans: DataFrame = calculateMeans()
   private lazy val alleleStandardDeviations: DataFrame = calculateStandardDeviations()
-  private lazy val distancesOnPositions: DataFrame = calculateDistancesOnPositions()
 
   def sampleData(source: DataFrame): DataFrame ={
-    val randomSubjects: List[String] = Random.shuffle(data.columns.drop(1).toList).take((data.columns.length-1)/2)
-    data.select("ID", randomSubjects:_*)
+    val randomSubjects: List[String] = Random.shuffle(trainData.columns.drop(1).toList).take((trainData.columns.length-1)/2)
+    trainData.select("ID", randomSubjects:_*)
   }
 
   /**
@@ -119,18 +120,18 @@ class RHMIteration (val iteration: Int, val data: DataFrame) {
     alleleMeans
     alleleStandardDeviations
 
-    val dataOccurences = aggregateOccurrences(data)
+    val dataOccurences = aggregateOccurrences(trainData)
     val schema = StructType(Seq(StructField("ID", StringType, nullable = false)) ++
       dataOccurences.schema.toStream.drop(1).map(sf => StructField(sf.name, DoubleType, nullable = false)))
     val rows = dataOccurences.collect().toStream.par
       .map(row => {
-        val id = row.get(0)
+        val id = row.getAs[String]("ID")
         val avgRow = alleleMeans.where(s"ID='$id'").first()
         val devRow = alleleStandardDeviations.where(s"ID='$id'").first()
         Row.fromSeq(
           Seq(id) ++
             schema.fieldNames.toStream
-              .drop(1)
+              .filter(fn => !fn.equals("ID"))
               .map(fn => {
                 val avg = if(avgRow.schema.fieldNames.contains(fn)) avgRow.getAs[Double](fn) else 0d
                 val dev = if(devRow.schema.fieldNames.contains(fn)) devRow.getAs[Double](fn) else 0d
@@ -147,22 +148,30 @@ class RHMIteration (val iteration: Int, val data: DataFrame) {
     * @return
     */
   def calculateDistancesOnPositions(): DataFrame ={
-    scaledDataAlleleOccurrences
+    calculateDistancesOnPositionsFor(trainData)
+  }
 
-    val subjectsAmount = (data.columns.length - 1).toDouble
+  /**
+    * Euclidean distances calculation for each position
+    * @return
+    */
+  def calculateDistancesOnPositionsFor(subjects: DataFrame): DataFrame ={
+    scaledDataAlleleOccurrences
+    val columns = subjects.columns.filter(fn => !fn.equals("ID")).toSeq.sorted
+
+    val subjectsAmount = Set(trainData.columns ++ subjects.columns).flatten.count(fn => !fn.equals("ID"))
     val schema = StructType(Seq(StructField("ID", StringType, nullable = false)) ++
-      data.schema.toStream.drop(1).map(sf => StructField(sf.name, DoubleType, nullable = false)))
-    val rows = data.collect.toStream
+      columns.toStream.map(sf => StructField(sf, DoubleType, nullable = false)))
+    val rows = subjects.collect.toStream
       .map(row => {
-        val id = row.get(0)
+        val id = row.getAs[String]("ID")
 
         val scaledRow = scaledDataAlleleOccurrences.where(s"ID='$id'").first()
         Row.fromSeq(
           Seq(id) ++
             1.until(row.length).toStream
               .map(i => row.getAs[String](i))
-              .map(allele => subjectsAmount - scaledRow.getAs[Double](allele))
-              .map(x => x)
+              .map(allele => subjectsAmount - (if(scaledRow.schema.fieldNames.contains(allele)) scaledRow.getAs[Double](allele) else 0d))
         )
       })
       .toList.asJava
@@ -174,12 +183,31 @@ class RHMIteration (val iteration: Int, val data: DataFrame) {
     * @return
     */
   def calculateDistances(): Map[String, Double] = {
+    calculateDistanceFor(distancesOnPositions)
+  }
+
+  /**
+    * Given subject's Euclidean distance on all positions
+    * @return
+    */
+  def calculateDistanceFor(subjectDistancesOnPositions: DataFrame): Map[String, Double] = {
+    val columns = subjectDistancesOnPositions.columns.filter(fn => !fn.equals("ID")).sorted
     (
-      distancesOnPositions.columns.drop(1),
-      distancesOnPositions.select(distancesOnPositions.columns(1), distancesOnPositions.columns.drop(2):_*)
-      .reduce((acc, row) => Row.fromSeq((acc.toSeq.map(_.asInstanceOf[Double]), row.toSeq.map(_.asInstanceOf[Double])).zipped.map(_+_)))
-      .toSeq
-      .map(_.asInstanceOf[Double])
+      columns,
+      subjectDistancesOnPositions.select(columns(0), columns.drop(1):_*)
+//        .reduce((acc, row) => new GenericRowWithSchema(
+//          columns.map(fn => {
+//            (if(acc.schema.fieldNames.contains(fn)) acc.getAs[Double](fn) else 0d) +
+//              (if(row.schema.fieldNames.contains(fn)) row.getAs[Double](fn) else 0d)
+//          }), row.schema)
+//        )
+        .reduce((acc, row) => new GenericRowWithSchema(
+          columns.map(fn => {
+            acc.getAs[Double](fn) + row.getAs[Double](fn)
+          }), row.schema)
+        )
+        .toSeq
+        .map(_.asInstanceOf[Double])
     ).zipped.toMap
   }
 }
