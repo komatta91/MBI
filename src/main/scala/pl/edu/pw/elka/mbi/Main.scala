@@ -25,7 +25,7 @@ object Main {
     testsFile.write(s"ReadLimit,RHMIterations,AlgorithmVariant,TrainingTime,TestingTime,ReferentialTime,TrainingOutliers,TestingOutliers,ReferentialOutliers,TotalVariants")
 
     Seq(
-      (100, 10, laxAlgorithm)//,
+      (100, 10, laxAlgorithm),
       (1000, 10, laxAlgorithm),
       (10000, 10, laxAlgorithm),
       (100000, 10, laxAlgorithm),
