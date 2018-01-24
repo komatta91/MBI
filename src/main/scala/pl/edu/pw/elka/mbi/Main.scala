@@ -59,11 +59,11 @@ object Main {
 
       var timeTraining = System.currentTimeMillis
         val rhm = new RHMClassifier(trainData, rhmIterations)
-        val trainingOutliers = rhmAlgorithm(rhm, null)//rhm.findOutliers()
+        val trainingOutliers = rhmAlgorithm(rhm, null)
       timeTraining = System.currentTimeMillis - timeTraining
 
       var timeTesting = System.currentTimeMillis
-        val testingOutliers = rhm.findOutliersFor(testData)
+        val testingOutliers = rhmAlgorithm(rhm, testData)
       timeTesting = System.currentTimeMillis - timeTesting
 
       var timeReferential = System.currentTimeMillis
