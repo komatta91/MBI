@@ -195,12 +195,6 @@ class RHMIteration (val iteration: Int, val trainData: DataFrame) {
     (
       columns,
       subjectDistancesOnPositions.select(columns(0), columns.drop(1):_*)
-//        .reduce((acc, row) => new GenericRowWithSchema(
-//          columns.map(fn => {
-//            (if(acc.schema.fieldNames.contains(fn)) acc.getAs[Double](fn) else 0d) +
-//              (if(row.schema.fieldNames.contains(fn)) row.getAs[Double](fn) else 0d)
-//          }), row.schema)
-//        )
         .reduce((acc, row) => new GenericRowWithSchema(
           columns.map(fn => {
             acc.getAs[Double](fn) + row.getAs[Double](fn)
