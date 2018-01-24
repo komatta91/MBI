@@ -56,26 +56,27 @@ object Main {
     val spark = SparkSession.builder().appName("MBI").master(s"local[$cores]").getOrCreate()
 
     val testsFile = new PrintWriter(s"tests_${System.currentTimeMillis}.csv")
-    testsFile.write(s"ReadLimit,RHMIterations,AlgorithmVariant,TrainingTime,TestingTime,ReferentialTime,TrainingOutliers,TestingOutliers,ReferentialOutliers,TotalVariants")
+    testsFile.write(s"ReadLimit,RHMIterations,AlgorithmVariant,TrainingTime,TestingTime,ReferentialTime,TrainingOutliers,TestingOutliers,ReferentialOutliers,TotalVariants\n")
 
     Seq(
-      (100, 10, laxAlgorithm),
-      (1000, 10, laxAlgorithm),
-      (10000, 10, laxAlgorithm),
-      (100000, 10, laxAlgorithm),
-      (100, 100, laxAlgorithm),
-      (1000, 100, laxAlgorithm),
-      (10000, 100, laxAlgorithm),
-//      (100000, 100, laxAlgorithm)
+      (100, 2, laxAlgorithm),
+      (1000, 2, laxAlgorithm),
+      (10000, 2, laxAlgorithm),
+      (100000, 2, laxAlgorithm),
+      (100, 4, laxAlgorithm),
+      (1000, 4, laxAlgorithm),
+      (10000, 4, laxAlgorithm),
 
-      (100, 10, strictAlgorithm),
-      (1000, 10, strictAlgorithm),
-      (10000, 10, strictAlgorithm),
-      (100000, 10, strictAlgorithm),
-      (100, 100, strictAlgorithm),
-      (1000, 100, strictAlgorithm),
-      (10000, 100, strictAlgorithm)
-//      (100000, 100, strictAlgorithm)
+      (100, 2, strictAlgorithm),
+      (1000, 2, strictAlgorithm),
+      (10000, 2, strictAlgorithm),
+      (100000, 2, strictAlgorithm),
+      (100, 4, strictAlgorithm),
+      (1000, 4, strictAlgorithm),
+      (10000, 4, strictAlgorithm),
+
+      (100000, 4, strictAlgorithm),
+      (100000, 4, laxAlgorithm)
 
     ).foreach((testParams: (Int, Int, (RHMClassifier, DataFrame) => Set[String])) => {
       val readLimit = testParams._1
@@ -105,7 +106,7 @@ object Main {
         val referencialOutliers = rhmAlgorithm(referencialRhm, null)
       timeReferential = System.currentTimeMillis - timeReferential
 
-      testsFile.write(s"${readLimit},${rhmIterations},${if(rhmAlgorithm == laxAlgorithm) "lax" else "strict"},${timeTraining},${timeTesting},${timeReferential},${trainingOutliers.size},${testingOutliers.size},${referencialOutliers.size},${data.columns.length-1}")
+      testsFile.write(s"${readLimit},${rhmIterations},${if(rhmAlgorithm == laxAlgorithm) "lax" else "strict"},${timeTraining},${timeTesting},${timeReferential},${trainingOutliers.size},${testingOutliers.size},${referencialOutliers.size},${data.columns.length-1}\n")
       testsFile.flush()
     })
 
