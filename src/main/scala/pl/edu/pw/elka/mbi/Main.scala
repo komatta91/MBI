@@ -9,17 +9,51 @@ import scala.util.Random
 
 object Main {
 
-  // https://github.com/samtools/htsjdk/blob/master/src/test/java/htsjdk/tribble/index/tabix/TabixIndexTest.java
-  // testQueryProvidedItemsAmount
+  val laxAlgorithm = (rhm: RHMClassifier, data: DataFrame) => {if(data == null) rhm.findOutliers() else rhm.findOutliersFor(data)}
+  val strictAlgorithm = (rhm: RHMClassifier, data: DataFrame) => {if(data == null) rhm.findOutliersStrict() else rhm.findOutliersStrictFor(data)}
+
   def main(args: Array[String]): Unit = {
+    if(args.head.equalsIgnoreCase("test")){
+      performanceTest(args.drop(1))
+    }else if(args.head.equalsIgnoreCase("strict")){
+      val rhmIterations = args(1).toInt
+      run(args.drop(2)filter(path => !path.toLowerCase().endsWith(".vcf.gz.tbi")), strictAlgorithm, rhmIterations)
+    }else if(args.head.equalsIgnoreCase("lax")){
+      val rhmIterations = args(1).toInt
+      run(args.drop(2)filter(path => !path.toLowerCase().endsWith(".vcf.gz.tbi")), laxAlgorithm, rhmIterations)
+    }else{
+      println("Expected arguments: [strict|lax] [RHM iterations] [*.vcf.gz] [*.vcf.gz] ...")
+      println("Each *.vcf.gz file must have accompanying *.vcf.gz.tbi file in the same directory")
+      println("[strict|lax] is the outlier detection algorithm variant")
+      println("Results are written to the outliers_*.lst file")
+    }
+  }
+
+  def run(args: Array[String], rhmAlgorithm: (RHMClassifier, DataFrame) => Set[String], rhmIterations: Int): Unit = {
     val iter = MultiFileIterator.openMultipleFiles(args.toList)
     val columns = iter.sortedColumnSet
 
     val cores = 4
     val spark = SparkSession.builder().appName("MBI").master(s"local[$cores]").getOrCreate()
 
-    val laxAlgorithm = (rhm: RHMClassifier, data: DataFrame) => {if(data == null) rhm.findOutliers() else rhm.findOutliersFor(data)}
-    val strictAlgorithm = (rhm: RHMClassifier, data: DataFrame) => {if(data == null) rhm.findOutliersStrict() else rhm.findOutliersStrictFor(data)}
+    val outliersFile = new PrintWriter(s"outliers_${System.currentTimeMillis}.lst")
+
+
+    val data = VcfSparkAdapter.createDataFrame(spark, columns, iter)
+
+    val rhm = new RHMClassifier(data, rhmIterations)
+
+    rhmAlgorithm(rhm, null).toSeq.sorted.foreach(outlier => outliersFile.write(s"$outlier\n"))
+
+    outliersFile.close()
+  }
+
+  def performanceTest(args: Array[String]): Unit = {
+    val iter = MultiFileIterator.openMultipleFiles(args.toList)
+    val columns = iter.sortedColumnSet
+
+    val cores = 4
+    val spark = SparkSession.builder().appName("MBI").master(s"local[$cores]").getOrCreate()
 
     val testsFile = new PrintWriter(s"tests_${System.currentTimeMillis}.csv")
     testsFile.write(s"ReadLimit,RHMIterations,AlgorithmVariant,TrainingTime,TestingTime,ReferentialTime,TrainingOutliers,TestingOutliers,ReferentialOutliers,TotalVariants")

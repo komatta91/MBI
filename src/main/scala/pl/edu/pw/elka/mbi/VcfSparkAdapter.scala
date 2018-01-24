@@ -9,6 +9,18 @@ import scala.collection.JavaConverters._
 
 
 object VcfSparkAdapter {
+  /**
+    * Adapter method creating a Spark DataFrame from the htsjdk library CloseableIterator[VariantContext] from the VCF files.
+    * No read limit is applied.
+    * All non-SNP variants are omitted.
+    * @param sparkSession - SparkSession instance
+    * @param columns - list of column names from VCF files
+    * @param vcfIterator - VCF files iterator
+    * @return - new spark session DataFrame
+    */
+  def createDataFrame(sparkSession: SparkSession, columns: List[String], vcfIterator: CloseableIterator[VariantContext]): DataFrame = {
+    createDataFrame(sparkSession, columns, vcfIterator, 0)
+  }
 
   /**
     * Adapter method creating a Spark DataFrame from the htsjdk library CloseableIterator[VariantContext] from the VCF files.
@@ -29,9 +41,12 @@ object VcfSparkAdapter {
       })
     }
 
-    val rowList: java.util.List[Row] = vcfIterator.asScala.toStream
+    var stream = vcfIterator.asScala.toStream
       .filter(variant => variant.isSNP)
-      .take(snpLimit)
+    if(snpLimit > 0){
+      stream = stream.take(snpLimit)
+    }
+    val rowList: java.util.List[Row] = stream
       .filter(variant => variant.getGenotypes.asScala.map(genotype => genotype.getGenotypeString).toStream.distinct.size > 1)
       .map(variant => makeRow(s"${variant.getContig}:${variant.getID}", variant.getGenotypes))
       .asJava
