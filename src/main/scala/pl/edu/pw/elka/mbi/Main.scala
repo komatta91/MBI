@@ -68,7 +68,7 @@ object Main {
 
       var timeReferential = System.currentTimeMillis
         val referencialRhm = new RHMClassifier(data, rhmIterations)
-        val referencialOutliers = referencialRhm.findOutliers()
+        val referencialOutliers = rhmAlgorithm(referencialRhm, null)
       timeReferential = System.currentTimeMillis - timeReferential
 
       testsFile.write(s"${readLimit},${rhmIterations},${if(rhmAlgorithm == laxAlgorithm) "lax" else "strict"},${timeTraining},${timeTesting},${timeReferential},${trainingOutliers.size},${testingOutliers.size},${referencialOutliers.size},${data.columns.length-1}")
